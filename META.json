@@ -1,0 +1,51 @@
+{
+   "name": "arraymath",
+   "abstract": "Element-by-element math operations for array types",
+   "description": "Array math allows you to do math and logic with arrays element-by-element. So you can add two arrays, or an array and a value, or compare the elements of two arrays.",
+   "version": "1.0",
+   "maintainer": [
+      "Paul Ramsey <pramsey@cleverelephant.ca>"
+   ],
+   "license": {
+      "mit": "http://en.wikipedia.org/wiki/MIT_License"
+   },
+   "prereqs": {
+      "runtime": {
+         "requires": {
+            "PostgreSQL": "9.1.0"
+         },
+         "recommends": {
+            "PostgreSQL": "9.1.3"
+         }
+      }
+   },
+   "provides": {
+     "http": {
+       "file": "arraymath--1.0.sql",
+       "docfile": "README.md",
+       "version": "1.0",
+       "abstract": "Array math operations for PostgreSQL"
+     },
+   },
+   "resources": {
+      "homepage": "https://github.com/pramsey/pgsql-arraymath/",
+      "bugtracker": {
+         "web": "https://github.com/pramsey/pgsql-arraymath/issues"
+      },
+      "repository": {
+        "url":  "https://github.com/pramsey/pgsql-arraymath.git",
+        "web":  "https://github.com/pramsey/pgsql-arraymath/",
+        "type": "git"
+      }
+   },
+   "generated_by": "Paul Ramsey",
+   "meta-spec": {
+      "version": "1.0.0",
+      "url": "http://pgxn.org/meta/spec.txt"
+   },
+   "tags": [
+      "array",
+      "elements",
+      "operators"
+   ]
+}
