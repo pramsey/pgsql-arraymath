@@ -96,7 +96,7 @@ void _PG_fini(void)
 */
 static void 
 arraymath_fmgrinfo_from_optype(const char *opstr, Oid element_type1, 
-                               Oid element_type2, FmgrInfo *operfmgrinfo)
+                               Oid element_type2, FmgrInfo *operfmgrinfo, Oid *return_type)
 {
     Oid operator_oid;    
     HeapTuple opertup;
@@ -118,6 +118,7 @@ arraymath_fmgrinfo_from_optype(const char *opstr, Oid element_type1,
     }
 
     operform = (Form_pg_operator) GETSTRUCT(opertup);
+    *return_type = operform->oprresult;
 
     fmgr_info(operform->oprcode, operfmgrinfo);
     ReleaseSysCache(opertup);
@@ -125,22 +126,6 @@ arraymath_fmgrinfo_from_optype(const char *opstr, Oid element_type1,
     return;
 }
 
-/*
-* Apply an operator using an element over all the elements 
-* of an array.
-*/
-static ArrayType * 
-arraymath_array_oper_elem(ArrayType *array1, char *opname, ArrayType *array2)
-{
-    int ndims1 = ARR_NDIM(array1);
-    int *dims1 = ARR_DIMS(array1);
-    Oid element_type1 = ARR_ELEMTYPE(array1);
-    int nitems1;
-    FmgrInfo operfmgrinfo;
-    
-    elog(ERROR, "not implemeted yet");
-    return NULL;
-}
 
 /*
 * Read type information for a given element type.
@@ -158,6 +143,111 @@ arraymath_typentry_from_type(Oid element_type)
 }
 
 
+/*
+* Apply an operator using an element over all the elements 
+* of an array.
+*/
+static ArrayType * 
+arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2, Oid element_type2)
+{
+    ArrayType *array_out;
+    int	dims[1];
+	int	lbs[1];
+    Datum *elems;
+    bool *nulls;
+	
+    int ndims1 = ARR_NDIM(array1);
+    int *dims1 = ARR_DIMS(array1);
+    char *ptr1;
+    Oid element_type1 = ARR_ELEMTYPE(array1);
+    Oid rtype; 
+    int nelems, n;
+    bits8 *bitmap1;
+    int bitmask1;
+    FmgrInfo operfmgrinfo;
+    TypeCacheEntry *info1, *tinfo;
+
+    /* Only 1D arrays for now */
+    if ( ndims1 != 1 )
+    {
+        elog(ERROR, "only 1-dimensional arrays supported");
+        return NULL;
+    }
+
+    /* What function works for these input types? Populate operfmgrinfo. */
+    /* What data type will the output array be? */
+    arraymath_fmgrinfo_from_optype(opname, element_type1, element_type2, &operfmgrinfo, &rtype);
+
+    /* How big is the output array? */
+    nelems = ArrayGetNItems(ndims1, dims1);
+
+    /* If either input is empty, return empty */
+    if ( nelems == 0 )
+    {
+        return construct_empty_array(rtype);
+    }
+    
+    /* Allocate space for output data */
+    elems = palloc(sizeof(Datum)*nelems);
+    nulls = palloc(sizeof(bool)*nelems);
+
+    /* Set up our reading pointers */
+    ptr1 = ARR_DATA_PTR(array1);
+    bitmap1 = ARR_NULLBITMAP(array1);
+
+    /* Learn more about the input arrays */
+    info1 = arraymath_typentry_from_type(element_type1);
+    
+    /* Loop over all the items, re-using items from the shorter */
+    /* array to apply to the longer */
+    for( n = 0; n < nelems; n++ )
+    {
+        /* Check null status */
+        bool isnull1 = BITMAP_ISNULL(bitmap1, bitmask1);
+        
+        if ( isnull1 )
+        {
+            nulls[n] = true;
+            elems[n] = (Datum) 0;
+        }
+        else
+        {
+            /* Read the element value */
+            Datum element1 = fetch_att(ptr1, info1->typbyval, info1->typlen);
+
+            /* Apply the operator */
+            nulls[n] = false;
+            elems[n] = FunctionCall2(&operfmgrinfo, element1, element2);
+
+            /* Move the pointer forward */
+            ptr1 = att_addlength_pointer(ptr1, info1->typlen, ptr1);
+            ptr1 = (char *) att_align_nominal(ptr1, info1->typalign);
+        }
+
+        BITMAP_INCREMENT(bitmap1, bitmask1);
+    }
+
+    /* Build 1-d output array */
+    tinfo = arraymath_typentry_from_type(rtype);
+	dims[0] = nelems;
+	lbs[0] = 1;
+    array_out = construct_md_array(elems, nulls, 1, dims, lbs, rtype, tinfo->typlen, tinfo->typbyval, tinfo->typalign);
+    
+    /* Output is supposed to be a copy, so free the inputs */
+    pfree(elems);
+    pfree(nulls);
+    
+    /* Make sure we haven't been given garbage */
+    if ( ! array_out )
+    {
+        elog(ERROR, "unable to construct output array");
+        return NULL;
+    }
+    
+    return array_out;
+}
+
+
 
 /*
 * Apply an operator over all the elements of a pair of arrays
@@ -165,7 +255,7 @@ arraymath_typentry_from_type(Oid element_type)
 * input array.
 */
 static ArrayType * 
-arraymath_array_oper_array(ArrayType *array1, char *opname, ArrayType *array2)
+arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *array2)
 {
     ArrayType *array_out;
     int	dims[1];
@@ -196,10 +286,8 @@ arraymath_array_oper_array(ArrayType *array1, char *opname, ArrayType *array2)
     }
 
     /* What function works for these input types? Populate operfmgrinfo. */
-    arraymath_fmgrinfo_from_optype(opname, element_type1, element_type2, &operfmgrinfo);
-
     /* What data type will the output array be? */
-    rtype = get_fn_expr_rettype(&operfmgrinfo);
+    arraymath_fmgrinfo_from_optype(opname, element_type1, element_type2, &operfmgrinfo, &rtype);
     tinfo = arraymath_typentry_from_type(rtype);
     
     /* How big is the output array? */
@@ -313,189 +401,52 @@ arraymath_array_oper_array(ArrayType *array1, char *opname, ArrayType *array2)
 * Our only function, takes in two arrays and tries to add
 * them together.
 */
-Datum arr_plus_arr(PG_FUNCTION_ARGS);
-PG_FUNCTION_INFO_V1(array_add);
-Datum arr_plus_arr(PG_FUNCTION_ARGS)
+// Datum array_plus_array(PG_FUNCTION_ARGS);
+// PG_FUNCTION_INFO_V1(array_plus_array);
+// Datum array_plus_array(PG_FUNCTION_ARGS)
+// {
+//     ArrayType *array1 = PG_GETARG_ARRAYTYPE_P(0);
+//     ArrayType *array2 = PG_GETARG_ARRAYTYPE_P(1);
+// //    Oid collation = PG_GET_COLLATION();
+// // fcinfo->flinfo
+// 
+//     PG_RETURN_ARRAYTYPE_P(arraymath_array_oper_array(array1, "+", array2));
+// }
+
+
+Datum array_compare_value(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(array_compare_value);
+Datum array_compare_value(PG_FUNCTION_ARGS)
 {
     ArrayType *array1 = PG_GETARG_ARRAYTYPE_P(0);
-    ArrayType *array2 = PG_GETARG_ARRAYTYPE_P(1);
-//    Oid collation = PG_GET_COLLATION();
+    Datum element2 = PG_GETARG_DATUM(1);
+    text *operator = PG_GETARG_TEXT_P(2);
+    char *opname = text_to_cstring(operator);
+    Oid element_type2;
+    ArrayType *arrayout;
+    
+    element_type2 = get_fn_expr_argtype(fcinfo->flinfo, 1);
+    arrayout = arraymath_array_oper_elem(array1, opname, element2, element_type2);
 
-    PG_RETURN_ARRAYTYPE_P(arraymath_array_oper_array(array1, "+", array2));
+    PG_FREE_IF_COPY(array1, 0);
+    PG_RETURN_ARRAYTYPE_P(arrayout);
 }
 
+Datum array_math_value(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(array_math_value);
+Datum array_math_value(PG_FUNCTION_ARGS)
+{
+    ArrayType *array1 = PG_GETARG_ARRAYTYPE_P(0);
+    Datum element2 = PG_GETARG_DATUM(1);
+    text *operator = PG_GETARG_TEXT_P(2);
+    char *opname = text_to_cstring(operator);
+    Oid element_type2;
+    ArrayType *arrayout;
+    
+    element_type2 = get_fn_expr_argtype(fcinfo->flinfo, 1);
+    arrayout = arraymath_array_oper_elem(array1, opname, element2, element_type2);
 
-#if 0
-/*
- * construct_array	--- simple method for constructing an array object
- *
- * elems: array of Datum items to become the array contents
- *		  (NULL element values are not supported).
- * nelems: number of items
- * elmtype, elmlen, elmbyval, elmalign: info for the datatype of the items
- *
- * A palloc'd 1-D array object is constructed and returned.  Note that
- * elem values will be copied into the object even if pass-by-ref type.
- *
- * NOTE: it would be cleaner to look up the elmlen/elmbval/elmalign info
- * from the system catalogs, given the elmtype.  However, the caller is
- * in a better position to cache this info across multiple uses, or even
- * to hard-wire values if the element type is hard-wired.
- */
-ArrayType *
-construct_array(Datum *elems, int nelems,
-				Oid elmtype,
-				int elmlen, bool elmbyval, char elmalign)
-#endif
-
-
-
-
-#if 0
-    TypeCacheEntry *typentry;
-    int                     typlen;
-    bool            typbyval;
-    char            typalign;
-    char       *ptr1;
-    char       *ptr2;
-    bits8      *bitmap1;
-    bits8      *bitmap2;
-    int                     bitmask;
-    int                     i;
-    FunctionCallInfoData locfcinfo;
-
-    if (element_type != ARR_ELEMTYPE(array2))
-            ereport(ERROR,
-                            (errcode(ERRCODE_DATATYPE_MISMATCH),
-                             errmsg("cannot compare arrays of different element types")));
-
-    /* fast path if the arrays do not have the same dimensionality */
-    if (ndims1 != ndims2 ||
-            memcmp(dims1, dims2, 2 * ndims1 * sizeof(int)) != 0)
-            result = false;
-    else
-    {
-                /*
-                 * We arrange to look up the equality function only once per series of
-                 * calls, assuming the element type doesn't change underneath us.  The
-                 * typcache is used so that we have no memory leakage when being used
-                 * as an index support function.
-                 */
-                typentry = (TypeCacheEntry *) fcinfo->flinfo->fn_extra;
-                if (typentry == NULL ||
-                        typentry->type_id != element_type)
-                {
-                        typentry = lookup_type_cache(element_type,
-                                                                                 TYPECACHE_EQ_OPR_FINFO);
-                        if (!OidIsValid(typentry->eq_opr_finfo.fn_oid))
-                                ereport(ERROR,
-                                                (errcode(ERRCODE_UNDEFINED_FUNCTION),
-                                errmsg("could not identify an equality operator for type %s",
-                                           format_type_be(element_type))));
-                        fcinfo->flinfo->fn_extra = (void *) typentry;
-                }
-                typlen = typentry->typlen;
-                typbyval = typentry->typbyval;
-                typalign = typentry->typalign;
-
-                /*
-                 * apply the operator to each pair of array elements.
-                 */
-                InitFunctionCallInfoData(locfcinfo, &typentry->eq_opr_finfo, 2,
-                                                                 collation, NULL, NULL);
-
-                /* Loop over source data */
-                nitems = ArrayGetNItems(ndims1, dims1);
-                ptr1 = ARR_DATA_PTR(array1);
-                ptr2 = ARR_DATA_PTR(array2);
-                bitmap1 = ARR_NULLBITMAP(array1);
-                bitmap2 = ARR_NULLBITMAP(array2);
-                bitmask = 1;                    /* use same bitmask for both arrays */
-                for (i = 0; i < nitems; i++)
-                {
-                        Datum           elt1;
-                        Datum           elt2;
-                        bool            isnull1;
-                        bool            isnull2;
-                        bool            oprresult;
-
-                        /* Get elements, checking for NULL */
-                        if ()
-                        {
-                                isnull1 = true;
-                                elt1 = (Datum) 0;
-                        }
-                        else
-                        {
-                                isnull1 = false;
-                                elt1 = fetch_att(ptr1, typbyval, typlen);
-                                ptr1 = att_addlength_pointer(ptr1, typlen, ptr1);
-                                ptr1 = (char *) att_align_nominal(ptr1, typalign);
-                        }
-
-                        if (bitmap2 && (*bitmap2 & bitmask) == 0)
-                        {
-                                isnull2 = true;
-                                elt2 = (Datum) 0;
-                        }
-                        else
-                        {
-                                isnull2 = false;
-                                elt2 = fetch_att(ptr2, typbyval, typlen);
-                                ptr2 = att_addlength_pointer(ptr2, typlen, ptr2);
-                                ptr2 = (char *) att_align_nominal(ptr2, typalign);
-                        }
-                        /* advance bitmap pointers if any */
-                        bitmask <<= 1;
-                        if (bitmask == 0x100)
-                        {
-                                if (bitmap1)
-                                        bitmap1++;
-                                if (bitmap2)
-                                        bitmap2++;
-                                bitmask = 1;
-                        }
-
-                        /*
-                         * We consider two NULLs equal; NULL and not-NULL are unequal.
-                         */
-                        if (isnull1 && isnull2)
-                                continue;
-                        if (isnull1 || isnull2)
-                        {
-                                result = false;
-                                break;
-                        }
-
-                        /*
-                         * Apply the operator to the element pair
-                         */
-                        locfcinfo.arg[0] = elt1;
-                        locfcinfo.arg[1] = elt2;
-                        locfcinfo.argnull[0] = false;
-                        locfcinfo.argnull[1] = false;
-                        locfcinfo.isnull = false;
-                        oprresult = DatumGetBool(FunctionCallInvoke(&locfcinfo));
-                        if (!oprresult)
-                        {
-                                                            result = false;
-                                                            break;
-                                                    }
-                                            }
-                                    }
-
-                                    /* Avoid leaking memory when handed toasted input. */
-                                    PG_FREE_IF_COPY(array1, 0);
-                                    PG_FREE_IF_COPY(array2, 1);
-
-                                    PG_RETURN_BOOL(result);
-                            }
-#endif
-
-	
-	
-
-
-
-
+    PG_FREE_IF_COPY(array1, 0);
+    PG_RETURN_ARRAYTYPE_P(arrayout);
+}
 
