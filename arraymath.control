@@ -1,4 +1,4 @@
 default_version = '1.0'
 module_pathname = '$libdir/arraymath'
 relocatable = true
-comment = 'Array math and operators that work element by element on the contents of arrays."
+comment = 'Array math and operators that work element by element on the contents of arrays.'
