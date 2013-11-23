@@ -167,3 +167,77 @@ CREATE OPERATOR @+ (
     PROCEDURE = value_plus_array
 );
 
+
+CREATE OR REPLACE FUNCTION array_minus_value(arr1 ANYARRAY, elt2 ANYELEMENT)
+	RETURNS anyarray
+	AS 'SELECT array_math_value($1,$2,''-'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OR REPLACE FUNCTION value_minus_array(elt2 ANYELEMENT, arr1 ANYARRAY)
+	RETURNS anyarray
+	AS 'SELECT array_math_value($2,$1,''-'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OPERATOR @- (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyelement, 
+    PROCEDURE = array_minus_value
+);
+
+CREATE OPERATOR @- (
+    LEFTARG = anyelement, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = value_minus_array
+);
+
+
+CREATE OR REPLACE FUNCTION array_times_value(arr1 ANYARRAY, elt2 ANYELEMENT)
+	RETURNS anyarray
+	AS 'SELECT array_math_value($1,$2,''*'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OR REPLACE FUNCTION value_times_array(elt2 ANYELEMENT, arr1 ANYARRAY)
+	RETURNS anyarray
+	AS 'SELECT array_math_value($2,$1,''*'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OPERATOR @* (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyelement, 
+    PROCEDURE = array_times_value
+);
+
+CREATE OPERATOR @* (
+    LEFTARG = anyelement, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = value_times_array
+);
+
+
+CREATE OR REPLACE FUNCTION array_div_value(arr1 ANYARRAY, elt2 ANYELEMENT)
+	RETURNS anyarray
+	AS 'SELECT array_math_value($1,$2,''/'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OR REPLACE FUNCTION value_div_array(elt2 ANYELEMENT, arr1 ANYARRAY)
+	RETURNS anyarray
+	AS 'SELECT array_math_value($2,$1,''/'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OPERATOR @/ (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyelement, 
+    PROCEDURE = array_div_value
+);
+
+CREATE OPERATOR @/ (
+    LEFTARG = anyelement, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = value_div_array
+);

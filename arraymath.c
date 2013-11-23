@@ -414,6 +414,9 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
 // }
 
 
+/*
+* Compare an array to a constant element 
+*/
 Datum array_compare_value(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(array_compare_value);
 Datum array_compare_value(PG_FUNCTION_ARGS)
@@ -432,6 +435,9 @@ Datum array_compare_value(PG_FUNCTION_ARGS)
     PG_RETURN_ARRAYTYPE_P(arrayout);
 }
 
+/*
+* Do math on an array using a constant element
+*/
 Datum array_math_value(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(array_math_value);
 Datum array_math_value(PG_FUNCTION_ARGS)
