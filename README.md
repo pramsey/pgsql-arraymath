@@ -31,16 +31,20 @@ Array versus Array
 
 If you apply the operators with an array on both sides, the operator will be applied to each element pairing in turn, returning an array as long as the larger of the two inputs. Where the shorter array runs out of elements, the process will simply move back to the start of the array. For example:
 
-    SELECT ARRAY[1,2] @+ ARRAY[3,4] 
+    SELECT ARRAY[1,2] @+ ARRAY[3,4];
     
       {4,6}
       
-    SELECT ARRAY[1,2,3,4,5,6] @* ARRAY[1,2]
+    SELECT ARRAY[1,2,3,4,5,6] @* ARRAY[1,2];
     
       {1,4,3,8,5,12}
       
-    SELECT ARRAY[1,1,1,1] @< ARRAY[0,2]
+    SELECT ARRAY[1,1,1,1] @< ARRAY[0,2];
     
       {f,t,f,t}
+
+    SELECT ARRAY[1,2,3] @= ARRAY[3,2,1];
+
+      {f,t,f}
       
       

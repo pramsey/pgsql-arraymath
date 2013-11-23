@@ -398,20 +398,48 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
 }
 
 /*
-* Our only function, takes in two arrays and tries to add
-* them together.
+* Compare two arrays.
 */
-// Datum array_plus_array(PG_FUNCTION_ARGS);
-// PG_FUNCTION_INFO_V1(array_plus_array);
-// Datum array_plus_array(PG_FUNCTION_ARGS)
-// {
-//     ArrayType *array1 = PG_GETARG_ARRAYTYPE_P(0);
-//     ArrayType *array2 = PG_GETARG_ARRAYTYPE_P(1);
-// //    Oid collation = PG_GET_COLLATION();
-// // fcinfo->flinfo
-// 
-//     PG_RETURN_ARRAYTYPE_P(arraymath_array_oper_array(array1, "+", array2));
-// }
+Datum array_compare_array(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(array_compare_array);
+Datum array_compare_array(PG_FUNCTION_ARGS)
+{
+    ArrayType *array1 = PG_GETARG_ARRAYTYPE_P(0);
+    ArrayType *array2 = PG_GETARG_ARRAYTYPE_P(1);
+    text *operator = PG_GETARG_TEXT_P(2);
+    char *opname = text_to_cstring(operator);
+    ArrayType *arrayout;
+    
+    arrayout = arraymath_array_oper_array(array1, opname, array2);
+
+    PG_FREE_IF_COPY(array1, 0);
+    PG_FREE_IF_COPY(array2, 1);
+    
+    PG_RETURN_ARRAYTYPE_P(arrayout);
+}
+
+
+/*
+* Compare two arrays.
+*/
+Datum array_math_array(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(array_math_array);
+Datum array_math_array(PG_FUNCTION_ARGS)
+{
+    ArrayType *array1 = PG_GETARG_ARRAYTYPE_P(0);
+    ArrayType *array2 = PG_GETARG_ARRAYTYPE_P(1);
+    text *operator = PG_GETARG_TEXT_P(2);
+    char *opname = text_to_cstring(operator);
+    ArrayType *arrayout;
+    
+    arrayout = arraymath_array_oper_array(array1, opname, array2);
+
+    PG_FREE_IF_COPY(array1, 0);
+    PG_FREE_IF_COPY(array2, 1);
+    
+    PG_RETURN_ARRAYTYPE_P(arrayout);
+}
+
 
 
 /*

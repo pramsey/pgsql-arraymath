@@ -241,3 +241,127 @@ CREATE OPERATOR @/ (
     RIGHTARG = anyarray, 
     PROCEDURE = value_div_array
 );
+
+
+
+CREATE OR REPLACE FUNCTION array_compare_array(arr1 ANYARRAY, arr2 ANYARRAY, op TEXT)
+	RETURNS boolean[]
+	AS 'MODULE_PATHNAME'
+	LANGUAGE 'c'
+	IMMUTABLE STRICT;
+
+CREATE OR REPLACE FUNCTION array_equals_array(arr1 ANYARRAY, arr2 ANYARRAY)
+	RETURNS boolean[]
+	AS 'SELECT array_compare_array($1,$2,''='')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OPERATOR @= (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = array_equals_array
+);
+
+CREATE OR REPLACE FUNCTION array_lt_array(arr1 ANYARRAY, arr2 ANYARRAY)
+	RETURNS boolean[]
+	AS 'SELECT array_compare_array($1,$2,''<'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OPERATOR @< (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = array_lt_array
+);
+
+CREATE OR REPLACE FUNCTION array_gt_array(arr1 ANYARRAY, arr2 ANYARRAY)
+	RETURNS boolean[]
+	AS 'SELECT array_compare_array($1,$2,''>'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OPERATOR @> (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = array_gt_array
+);
+
+CREATE OR REPLACE FUNCTION array_lte_array(arr1 ANYARRAY, arr2 ANYARRAY)
+	RETURNS boolean[]
+	AS 'SELECT array_compare_array($1,$2,''<='')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OPERATOR @<= (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = array_lte_array
+);
+
+CREATE OR REPLACE FUNCTION array_gte_array(arr1 ANYARRAY, arr2 ANYARRAY)
+	RETURNS boolean[]
+	AS 'SELECT array_compare_array($1,$2,''>='')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OPERATOR @>= (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = array_gte_array
+);
+
+
+CREATE OR REPLACE FUNCTION array_math_array(arr1 ANYARRAY, arr2 ANYARRAY, op TEXT)
+	RETURNS anyarray
+	AS 'MODULE_PATHNAME'
+	LANGUAGE 'c'
+	IMMUTABLE STRICT;
+
+CREATE OR REPLACE FUNCTION array_plus_array(arr1 ANYARRAY, arr2 ANYARRAY)
+	RETURNS anyarray
+	AS 'SELECT array_math_array($1,$2,''+'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OPERATOR @+ (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = array_plus_array
+);
+
+CREATE OR REPLACE FUNCTION array_minus_array(arr1 ANYARRAY, arr2 ANYARRAY)
+	RETURNS anyarray
+	AS 'SELECT array_math_array($1,$2,''-'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OPERATOR @- (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = array_minus_array
+);
+
+CREATE OR REPLACE FUNCTION array_times_array(arr1 ANYARRAY, arr2 ANYARRAY)
+	RETURNS anyarray
+	AS 'SELECT array_math_array($1,$2,''*'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+
+CREATE OPERATOR @* (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = array_times_array
+);
+
+CREATE OR REPLACE FUNCTION array_div_array(arr1 ANYARRAY, arr2 ANYARRAY)
+	RETURNS anyarray
+	AS 'SELECT array_math_array($1,$2,''/'')'
+	LANGUAGE 'sql'
+	IMMUTABLE STRICT;
+	
+CREATE OPERATOR @/ (
+    LEFTARG = anyarray, 
+    RIGHTARG = anyarray, 
+    PROCEDURE = array_div_array
+);
+
