@@ -34,13 +34,14 @@
 #include <postgres.h>
 #include <fmgr.h>
 #include <funcapi.h>
-#include <utils/builtins.h>
-#include <utils/array.h>
-#include <catalog/pg_operator.h>
+#include <access/tuptoaster.h>
 #include <catalog/namespace.h>
+#include <catalog/pg_operator.h>
+#include <nodes/value.h>
+#include <utils/array.h>
+#include <utils/builtins.h>
 #include <utils/syscache.h>
 #include <utils/typcache.h>
-#include <nodes/value.h>
 
 
 /**********************************************************************
