@@ -4,7 +4,7 @@ OBJS = arraymath.o
 EXTENSION = arraymath
 DATA = arraymath--1.0.sql
 REGRESS = arraymath
-EXTRA-CLEAN =
+EXTRA_CLEAN =
 
 PG_CONFIG = pg_config
 
