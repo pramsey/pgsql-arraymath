@@ -76,10 +76,11 @@ void _PG_fini(void)
 #define BITMAP_GET(bitmap, i) (bitmap && (bitmap[(i)/sizeof(bits8)] & (1 << ((i) % sizeof(bits8)))))
 
 #define BITMAP_INCREMENT(bitmap, bitmask) do { \
-    bitmask <<= 1; \
-    if (bitmask == 0x100) { \
-        bitmap++; bitmask = 1; \
-    } } while(0);
+    if (bitmap) { \
+        bitmask <<= 1; \
+        if (bitmask == 0x100) { \
+            bitmap++; bitmask = 1; \
+    } } } while(0);
 
 #define BITMAP_ISNULL(bitmap, bitmask) (bitmap && (*bitmap & bitmask) == 0)
     
@@ -421,7 +422,7 @@ Datum array_compare_array(PG_FUNCTION_ARGS)
 
 
 /*
-* Compare two arrays.
+* Operator on two arrays.
 */
 Datum array_math_array(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(array_math_array);
