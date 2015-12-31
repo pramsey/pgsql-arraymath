@@ -56,14 +56,14 @@ void _PG_init(void);
 void _PG_init(void)
 {
     elog(NOTICE, "Hello from ArrayMath %s", ARRAYMATH_VERSION);
-	
+    
 }
 
 /* Tear-down */
 void _PG_fini(void);
 void _PG_fini(void)
 {
-	elog(NOTICE, "Goodbye from ArrayMath %s", ARRAYMATH_VERSION);
+    elog(NOTICE, "Goodbye from ArrayMath %s", ARRAYMATH_VERSION);
 }
 
 
@@ -153,24 +153,24 @@ static ArrayType *
 arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2, Oid element_type2)
 {
     ArrayType *array_out;
-    int	dims[1];
-	int	lbs[1];
+    int    dims[1];
+    int    lbs[1];
     Datum *elems;
     bool *nulls;
-	
+    
     int ndims1 = ARR_NDIM(array1);
     int *dims1 = ARR_DIMS(array1);
-    char *ptr1;
     Oid element_type1 = ARR_ELEMTYPE(array1);
     Oid rtype; 
-    int nelems, n;
-    bits8 *bitmap1;
-    int bitmask1;
+    int nelems, n = 0;
     FmgrInfo operfmgrinfo;
     TypeCacheEntry *info1, *tinfo;
+    ArrayIterator iterator1;
+    Datum element1;
+    bool isnull1;
 
     /* Only 1D arrays for now */
-    if ( ndims1 != 1 )
+    if (ndims1 != 1)
     {
         elog(ERROR, "only 1-dimensional arrays supported");
         return NULL;
@@ -183,56 +183,45 @@ arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2,
     /* How big is the output array? */
     nelems = ArrayGetNItems(ndims1, dims1);
 
-    /* If either input is empty, return empty */
-    if ( nelems == 0 )
+    /* If input is empty, return empty */
+    if (nelems == 0)
     {
         return construct_empty_array(rtype);
     }
     
+    /* Learn more about the input array */
+    info1 = arraymath_typentry_from_type(element_type1);
+
+#if PG_VERSION_NUM >= 90500
+    iterator1 = array_create_iterator(array1, 0, NULL);
+#else
+    iterator1 = array_create_iterator(array1, 0);
+#endif
+
     /* Allocate space for output data */
     elems = palloc(sizeof(Datum)*nelems);
     nulls = palloc(sizeof(bool)*nelems);
 
-    /* Set up our reading pointers */
-    ptr1 = ARR_DATA_PTR(array1);
-    bitmap1 = ARR_NULLBITMAP(array1);
-
-    /* Learn more about the input arrays */
-    info1 = arraymath_typentry_from_type(element_type1);
-    
-    /* Loop over all the items, re-using items from the shorter */
-    /* array to apply to the longer */
-    for( n = 0; n < nelems; n++ )
+    while (array_iterate(iterator1, &element1, &isnull1))
     {
-        /* Check null status */
-        bool isnull1 = BITMAP_ISNULL(bitmap1, bitmask1);
-        
-        if ( isnull1 )
+        if (isnull1)
         {
             nulls[n] = true;
             elems[n] = (Datum) 0;
         }
         else
         {
-            /* Read the element value */
-            Datum element1 = fetch_att(ptr1, info1->typbyval, info1->typlen);
-
             /* Apply the operator */
             nulls[n] = false;
             elems[n] = FunctionCall2(&operfmgrinfo, element1, element2);
-
-            /* Move the pointer forward */
-            ptr1 = att_addlength_pointer(ptr1, info1->typlen, ptr1);
-            ptr1 = (char *) att_align_nominal(ptr1, info1->typalign);
         }
-
-        BITMAP_INCREMENT(bitmap1, bitmask1);
+        n++;
     }
 
     /* Build 1-d output array */
     tinfo = arraymath_typentry_from_type(rtype);
-	dims[0] = nelems;
-	lbs[0] = 1;
+    dims[0] = nelems;
+    lbs[0] = 1;
     array_out = construct_md_array(elems, nulls, 1, dims, lbs, rtype, tinfo->typlen, tinfo->typbyval, tinfo->typalign);
     
     /* Output is supposed to be a copy, so free the inputs */
@@ -240,7 +229,7 @@ arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2,
     pfree(nulls);
     
     /* Make sure we haven't been given garbage */
-    if ( ! array_out )
+    if (!array_out)
     {
         elog(ERROR, "unable to construct output array");
         return NULL;
@@ -260,11 +249,11 @@ static ArrayType *
 arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *array2)
 {
     ArrayType *array_out;
-    int	dims[1];
-	int	lbs[1];
+    int    dims[1];
+    int    lbs[1];
     Datum *elems;
     bool *nulls;
-	
+    
     int ndims1 = ARR_NDIM(array1);
     int ndims2 = ARR_NDIM(array2);
     int *dims1 = ARR_DIMS(array1);
@@ -380,8 +369,8 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
     }
 
     /* Build 1-d output array */
-	dims[0] = nelems;
-	lbs[0] = 1;
+    dims[0] = nelems;
+    lbs[0] = 1;
     array_out = construct_md_array(elems, nulls, 1, dims, lbs, rtype, tinfo->typlen, tinfo->typbyval, tinfo->typalign);
     
     /* Output is supposed to be a copy, so free the inputs */
