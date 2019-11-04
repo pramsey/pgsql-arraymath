@@ -2,7 +2,7 @@
    "name": "arraymath",
    "abstract": "Element-by-element math operations for array types",
    "description": "Array math allows you to do math and logic with arrays element-by-element. So you can add two arrays, or an array and a value, or compare the elements of two arrays.",
-   "version": "1.0",
+   "version": "1.0.0",
    "maintainer": [
       "Paul Ramsey <pramsey@cleverelephant.ca>"
    ],
@@ -20,12 +20,12 @@
       }
    },
    "provides": {
-     "http": {
+     "arraymath": {
        "file": "arraymath--1.0.sql",
        "docfile": "README.md",
-       "version": "1.0",
+       "version": "1.0.0",
        "abstract": "Array math operations for PostgreSQL"
-     },
+     }
    },
    "resources": {
       "homepage": "https://github.com/pramsey/pgsql-arraymath/",
