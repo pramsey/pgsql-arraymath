@@ -365,3 +365,10 @@ CREATE OPERATOR @/ (
     PROCEDURE = array_div_array
 );
 
+
+--Array Sum
+CREATE OR REPLACE FUNCTION array_sum(arr anyarray)
+	RETURNS FLOAT8
+	AS 'MODULE_PATHNAME'
+	LANGUAGE 'c'
+	IMMUTABLE STRICT;
