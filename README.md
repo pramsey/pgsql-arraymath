@@ -1,6 +1,12 @@
 pgsql-arraymath
 ===============
 
+Enabling in a database
+-------------------------
+``
+CREATE EXTENSION arraymath;
+``
+
 Functions and operators for element-by-element math and logic on arrays. The operators are all the usual ones, but prefixed by ``@`` to indicate their element-by-element nature.
 
 * ``@=`` element-by-element equality, returns boolean[]
