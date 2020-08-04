@@ -511,7 +511,7 @@ array_sum(PG_FUNCTION_ARGS)
     // The size of the input array:
     int valsLength;
 
-    float8 v = 0;
+    Datum v = (Datum)0;
     int i;
 
     if (PG_ARGISNULL(0)) 
@@ -530,11 +530,6 @@ array_sum(PG_FUNCTION_ARGS)
         ereport(ERROR, (errmsg("One-dimesional arrays are required")));
     }
 
-    if (array_contains_nulls(vals)) 
-    {
-        ereport(ERROR, (errmsg("Array contains null elements")));
-    }
-
     // Determine the array element types.
     valsType = ARR_ELEMTYPE(vals);
 
@@ -549,53 +544,54 @@ array_sum(PG_FUNCTION_ARGS)
 
     valsLength = (ARR_DIMS(vals))[0];
 
-    if (valsLength == 0) PG_RETURN_NULL();
+    // Empty length still return 0
+    if (valsLength == 0)
+    {
+        goto END;
+    } 
 
-    get_typlenbyvalalign(valsType, &valsTypeWidth, &valsTypeByValue, &valsTypeAlignmentCode);
+    
 
-    // Extract the array contents (as Datum objects).
-    deconstruct_array(vals, valsType, valsTypeWidth, valsTypeByValue, valsTypeAlignmentCode,
-    &valsContent, &valsNullFlags, &valsLength);
+    // Get + operator FmgrInfo
+    FmgrInfo operfmgrinfo;
+    Oid rtype;
+    const char* op = "+";
 
-    // Iterate through the contents and sum things up,
-    // then return the mean:
-    // Watch out for overflow:
-    // http://stackoverflow.com/questions/1930454/what-is-a-good-solution-for-calculating-an-average-where-the-sum-of-all-values-e/1934266#1934266
+    TypeCacheEntry *info;
 
-    switch (valsType) {
-    case INT2OID:
-        for (i = 0; i < valsLength; i++) 
+    arraymath_fmgrinfo_from_optype(op, valsType, valsType, &operfmgrinfo, &rtype);
+
+
+
+    // Iterator
+    ArrayIterator iterator;
+
+    // Is Null boolean
+    bool isnull;
+
+    // Element
+    Datum element;
+
+
+#if PG_VERSION_NUM >= 90500
+    iterator = array_create_iterator(vals, 0, NULL);
+#else
+    iterator = array_create_iterator(vals, 0);
+#endif
+
+    
+    while (array_iterate(iterator, &element, &isnull))
+    {
+        if (!isnull)
         {
-            v += DatumGetInt16(valsContent[i]);
+            /* Apply the operator */
+            v = FunctionCall2(&operfmgrinfo, element, v);
         }
-        break;
-    case INT4OID:
-        for (i = 0; i < valsLength; i++) 
-        {
-            v += DatumGetInt32(valsContent[i]);
-        }
-        break;
-    case INT8OID:
-        for (i = 0; i < valsLength; i++) 
-        {
-            v += DatumGetInt64(valsContent[i]);
-        }
-        break;
-    case FLOAT4OID:
-        for (i = 0; i < valsLength; i++) 
-        {
-            v += DatumGetFloat4(valsContent[i]);
-        }
-        break;
-    case FLOAT8OID:
-        for (i = 0; i < valsLength; i++) 
-        {
-            v += DatumGetFloat8(valsContent[i]);
-        }
-        break;
-    default:
-        ereport(ERROR, (errmsg("Sum subject must be SMALLINT, INTEGER, BIGINT, REAL, or DOUBLE PRECISION values")));
-        break;
+        
     }
-    PG_RETURN_FLOAT8(v);
+
+
+    END:
+        PG_RETURN_DATUM(v);
+
 }
