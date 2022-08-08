@@ -512,26 +512,10 @@ array_sum(PG_FUNCTION_ARGS)
     // The array element type:
     Oid valsType;
 
-    // The array element type widths for our input array:
-    int16 valsTypeWidth;
-
-    // The array element type "is passed by value" flags (not really used):
-    bool valsTypeByValue;
-
-    // The array element type alignment codes (not really used):
-    char valsTypeAlignmentCode;
-
-    // The array contents, as PostgreSQL "Datum" objects:
-    Datum *valsContent;
-
-    // List of "is null" flags for the array contents (not used):
-    bool *valsNullFlags;
-
     // The size of the input array:
     int valsLength;
 
     Datum v = (Datum)0;
-    int i;
 
     if (PG_ARGISNULL(0)) 
     {
@@ -575,8 +559,6 @@ array_sum(PG_FUNCTION_ARGS)
     FmgrInfo operfmgrinfo;
     Oid rtype;
     const char* op = "+";
-
-    TypeCacheEntry *info;
 
     arraymath_fmgrinfo_from_optype(op, valsType, valsType, &operfmgrinfo, &rtype);
 
