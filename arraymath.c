@@ -32,9 +32,17 @@
 
 /* PostgreSQL */
 #include <postgres.h>
+#include <pg_config.h>
 #include <fmgr.h>
 #include <funcapi.h>
-#include <access/tuptoaster.h>
+
+/* Include for VARATT_EXTERNAL_GET_POINTER */
+#if PG_VERSION_NUM < 130000
+#  include <access/tuptoaster.h>
+#else
+#  include <access/detoast.h>
+#endif
+
 #include <catalog/namespace.h>
 #include <catalog/pg_operator.h>
 #include <nodes/value.h>
@@ -238,8 +246,6 @@ arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2,
     return array_out;
 }
 
-
-
 /*
 * Apply an operator over all the elements of a pair of arrays
 * expanding to return an array of the same size as the largest
@@ -268,6 +274,19 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
     int bitmask1, bitmask2;
     FmgrInfo operfmgrinfo;
     TypeCacheEntry *info1, *info2, *tinfo;
+
+    if ( ndims1 == 0 && ndims2 == 1 )
+    {
+        return array2;
+    }
+    else if ( ndims1 == 1 && ndims2 == 0 )
+    {
+        return array1;
+    }
+    else if ( ndims1 == 0 && ndims2 == 0 )
+    {
+        return construct_empty_array(element_type1);
+    }
 
     /* Only 1D arrays for now */
     if ( ndims1 != 1 || ndims2 != 1 )
