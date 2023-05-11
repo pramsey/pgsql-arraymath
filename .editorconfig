@@ -17,7 +17,7 @@ trim_trailing_whitespace = false
 
 # C files want tab indentation
 [*.{c,h,md}]
-indent_style = tab
+indent_style = space
 indent_size = 4
 
 # Makefiles want tab indentation

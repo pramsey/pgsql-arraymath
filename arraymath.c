@@ -13,10 +13,10 @@
  * distribute, sublicense, and/or sell copies of the Software, and to
  * permit persons to whom the Software is furnished to do so, subject to
  * the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included
  * in all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
  * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
  * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
@@ -27,7 +27,7 @@
  *
  ***********************************************************************/
 
-#define ARRAYMATH_VERSION "1.0"
+#define ARRAYMATH_VERSION "1.1"
 
 
 /* PostgreSQL */
@@ -46,12 +46,13 @@
 #include <catalog/namespace.h>
 #include <catalog/pg_operator.h>
 #include <catalog/pg_type.h>
+#include <catalog/pg_cast.h>
 #include <nodes/value.h>
 #include <utils/array.h>
 #include <utils/builtins.h>
 #include <utils/syscache.h>
 #include <utils/typcache.h>
-
+#include <utils/numeric.h>
 
 
 /**********************************************************************
@@ -66,7 +67,6 @@ void _PG_init(void);
 void _PG_init(void)
 {
     elog(NOTICE, "Hello from ArrayMath %s", ARRAYMATH_VERSION);
-    
 }
 
 /* Tear-down */
@@ -93,28 +93,35 @@ void _PG_fini(void)
     } } } while(0);
 
 #define BITMAP_ISNULL(bitmap, bitmask) (bitmap && (*bitmap & bitmask) == 0)
-    
-
 
 /**********************************************************************
 * Functions
 */
-    
+
+static ArrayIterator
+arraymath_create_iterator(ArrayType *arr)
+{
+#if PG_VERSION_NUM >= 90500
+    return array_create_iterator(arr, 0, NULL);
+#else
+    return array_create_iterator(arr, 0);
+#endif
+}
 
 /*
-* Given an operator symbol ("+", "-", "=" etc) and type element types, 
-* try to look up the appropriate function to do element level operations of 
+* Given an operator symbol ("+", "-", "=" etc) and type element types,
+* try to look up the appropriate function to do element level operations of
 * that type.
 */
-static void 
-arraymath_fmgrinfo_from_optype(const char *opstr, Oid element_type1, 
+static void
+arraymath_fmgrinfo_from_optype(const char *opstr, Oid element_type1,
                                Oid element_type2, FmgrInfo *operfmgrinfo, Oid *return_type)
 {
-    Oid operator_oid;    
+    Oid operator_oid;
     HeapTuple opertup;
     Form_pg_operator operform;
 
-    /* Look up the operator Oid that corresponts to this combination */
+    /* Look up the operator Oid that corresponds to this combination */
     /* of symbol and data types */
     operator_oid = OpernameGetOprid(list_make1(makeString(pstrdup(opstr))), element_type1, element_type2);
     if ( ! (operator_oid && OperatorIsVisible(operator_oid)) )
@@ -140,9 +147,36 @@ arraymath_fmgrinfo_from_optype(const char *opstr, Oid element_type1,
 
 
 /*
+* Given an a source and target type, look up the casting function.
+*/
+static void
+arraymath_fmgrinfo_from_cast(Oid castType1, Oid castType2, FmgrInfo *operfmgrinfo)
+{
+    HeapTuple casttup;
+    Form_pg_cast castform;
+
+    /* Lookup the function associated with the operator Oid */
+    casttup = SearchSysCache2(CASTSOURCETARGET,
+        ObjectIdGetDatum(castType1),
+        ObjectIdGetDatum(castType2));
+
+    if (! HeapTupleIsValid(casttup))
+    {
+        elog(ERROR, "cannot find cast heap tuple");
+    }
+
+    castform = (Form_pg_cast) GETSTRUCT(casttup);
+    fmgr_info(castform->castfunc, operfmgrinfo);
+    ReleaseSysCache(casttup);
+
+    return;
+}
+
+
+/*
 * Read type information for a given element type.
 */
-static TypeCacheEntry * 
+static TypeCacheEntry *
 arraymath_typentry_from_type(Oid element_type)
 {
     TypeCacheEntry *typentry;
@@ -151,15 +185,15 @@ arraymath_typentry_from_type(Oid element_type)
     {
         elog(ERROR, "unable to lookup element type info for %s", format_type_be(element_type));
     }
-    return typentry;    
+    return typentry;
 }
 
 
 /*
-* Apply an operator using an element over all the elements 
+* Apply an operator using an element over all the elements
 * of an array.
 */
-static ArrayType * 
+static ArrayType *
 arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2, Oid element_type2)
 {
     ArrayType *array_out;
@@ -167,14 +201,14 @@ arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2,
     int    lbs[1];
     Datum *elems;
     bool *nulls;
-    
+
     int ndims1 = ARR_NDIM(array1);
     int *dims1 = ARR_DIMS(array1);
     Oid element_type1 = ARR_ELEMTYPE(array1);
-    Oid rtype; 
+    Oid rtype;
     int nelems, n = 0;
     FmgrInfo operfmgrinfo;
-    TypeCacheEntry *info1, *tinfo;
+    TypeCacheEntry *tinfo;
     ArrayIterator iterator1;
     Datum element1;
     bool isnull1;
@@ -198,15 +232,8 @@ arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2,
     {
         return construct_empty_array(rtype);
     }
-    
-    /* Learn more about the input array */
-    info1 = arraymath_typentry_from_type(element_type1);
 
-#if PG_VERSION_NUM >= 90500
-    iterator1 = array_create_iterator(array1, 0, NULL);
-#else
-    iterator1 = array_create_iterator(array1, 0);
-#endif
+    iterator1 = arraymath_create_iterator(array1);
 
     /* Allocate space for output data */
     elems = palloc(sizeof(Datum)*nelems);
@@ -233,18 +260,18 @@ arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2,
     dims[0] = nelems;
     lbs[0] = 1;
     array_out = construct_md_array(elems, nulls, 1, dims, lbs, rtype, tinfo->typlen, tinfo->typbyval, tinfo->typalign);
-    
+
     /* Output is supposed to be a copy, so free the inputs */
     pfree(elems);
     pfree(nulls);
-    
+
     /* Make sure we haven't been given garbage */
     if (!array_out)
     {
         elog(ERROR, "unable to construct output array");
         return NULL;
     }
-    
+
     return array_out;
 }
 
@@ -253,7 +280,7 @@ arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2,
 * expanding to return an array of the same size as the largest
 * input array.
 */
-static ArrayType * 
+static ArrayType *
 arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *array2)
 {
     ArrayType *array_out;
@@ -261,15 +288,15 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
     int    lbs[1];
     Datum *elems;
     bool *nulls;
-    
+
     int ndims1 = ARR_NDIM(array1);
     int ndims2 = ARR_NDIM(array2);
     int *dims1 = ARR_DIMS(array1);
     int *dims2 = ARR_DIMS(array2);
     char *ptr1, *ptr2;
     Oid element_type1 = ARR_ELEMTYPE(array1);
-    Oid element_type2 = ARR_ELEMTYPE(array2);   
-    Oid rtype; 
+    Oid element_type2 = ARR_ELEMTYPE(array2);
+    Oid rtype;
     int nitems1, nitems2;
     int nelems, n;
     bits8 *bitmap1, *bitmap2;
@@ -312,7 +339,7 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
     {
         return construct_empty_array(rtype);
     }
-    
+
     /* Allocate space for output data */
     elems = palloc(sizeof(Datum)*nelems);
     nulls = palloc(sizeof(bool)*nelems);
@@ -320,7 +347,7 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
     /* Learn more about the input arrays */
     info1 = arraymath_typentry_from_type(element_type1);
     info2 = arraymath_typentry_from_type(element_type2);
-    
+
     /* Loop over all the items, re-using items from the shorter */
     /* array to apply to the longer */
     for( n = 0; n < nelems; n++ )
@@ -338,21 +365,21 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
             bitmap1 = ARR_NULLBITMAP(array1);
             bitmask1 = 1;
         }
-        
+
         if ( i2 == 0 )
         {
             ptr2 = ARR_DATA_PTR(array2);
             bitmap2 = ARR_NULLBITMAP(array2);
             bitmask2 = 1;
         }
-        
+
         /* Check null status */
         isnull1 = BITMAP_ISNULL(bitmap1, bitmask1);
         isnull2 = BITMAP_ISNULL(bitmap2, bitmask2);
-        
+
         /* Start with NULL values */
         elt1 = elt2 = (Datum) 0;
-        
+
         if ( ! isnull1 )
         {
             /* Read the element value */
@@ -384,7 +411,7 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
             nulls[n] = false;
             elems[n] = FunctionCall2(&operfmgrinfo, elt1, elt2);
         }
-        
+
         BITMAP_INCREMENT(bitmap1, bitmask1);
         BITMAP_INCREMENT(bitmap2, bitmask2);
     }
@@ -393,20 +420,19 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
     dims[0] = nelems;
     lbs[0] = 1;
     array_out = construct_md_array(elems, nulls, 1, dims, lbs, rtype, tinfo->typlen, tinfo->typbyval, tinfo->typalign);
-    
+
     /* Output is supposed to be a copy, so free the inputs */
     pfree(elems);
     pfree(nulls);
-    
+
     /* Make sure we haven't been given garbage */
     if ( ! array_out )
     {
         elog(ERROR, "unable to construct output array");
         return NULL;
     }
-    
+
     return array_out;
-    
 }
 
 /*
@@ -421,12 +447,12 @@ Datum array_compare_array(PG_FUNCTION_ARGS)
     text *operator = PG_GETARG_TEXT_P(2);
     char *opname = text_to_cstring(operator);
     ArrayType *arrayout;
-    
+
     arrayout = arraymath_array_oper_array(array1, opname, array2);
 
     PG_FREE_IF_COPY(array1, 0);
     PG_FREE_IF_COPY(array2, 1);
-    
+
     PG_RETURN_ARRAYTYPE_P(arrayout);
 }
 
@@ -443,19 +469,19 @@ Datum array_math_array(PG_FUNCTION_ARGS)
     text *operator = PG_GETARG_TEXT_P(2);
     char *opname = text_to_cstring(operator);
     ArrayType *arrayout;
-    
+
     arrayout = arraymath_array_oper_array(array1, opname, array2);
 
     PG_FREE_IF_COPY(array1, 0);
     PG_FREE_IF_COPY(array2, 1);
-    
+
     PG_RETURN_ARRAYTYPE_P(arrayout);
 }
 
 
 
 /*
-* Compare an array to a constant element 
+* Compare an array to a constant element
 */
 Datum array_compare_value(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(array_compare_value);
@@ -467,7 +493,7 @@ Datum array_compare_value(PG_FUNCTION_ARGS)
     char *opname = text_to_cstring(operator);
     Oid element_type2;
     ArrayType *arrayout;
-    
+
     element_type2 = get_fn_expr_argtype(fcinfo->flinfo, 1);
     arrayout = arraymath_array_oper_elem(array1, opname, element2, element_type2);
 
@@ -488,7 +514,7 @@ Datum array_math_value(PG_FUNCTION_ARGS)
     char *opname = text_to_cstring(operator);
     Oid element_type2;
     ArrayType *arrayout;
-    
+
     element_type2 = get_fn_expr_argtype(fcinfo->flinfo, 1);
     arrayout = arraymath_array_oper_elem(array1, opname, element2, element_type2);
 
@@ -496,6 +522,68 @@ Datum array_math_value(PG_FUNCTION_ARGS)
     PG_RETURN_ARRAYTYPE_P(arrayout);
 }
 
+
+static Datum
+arraymath_zero(Oid oid)
+{
+    /* Initialize result value */
+    if (oid == INT2OID ||
+        oid == INT4OID ||
+        oid == INT8OID ||
+        oid == FLOAT4OID ||
+        oid == FLOAT8OID)
+    {
+        /* Ints and Floats store value in the Datum */
+        return (Datum)0;
+    }
+    else if (oid == NUMERICOID)
+    {
+        /* Numeric type is varlena, requires special initialization */
+        return NumericGetDatum(int64_to_numeric(0));
+    }
+    else
+    {
+        ereport(ERROR, (errmsg("Sum subject must be NUMERIC, SMALLINT, INTEGER, BIGINT, REAL, or DOUBLE PRECISION values")));
+    }
+}
+
+
+static Datum
+arraymath_sum(ArrayType *vals, Oid valsType)
+{
+    /* Get + operator FmgrInfo */
+    FmgrInfo operfmgrinfo;
+    Oid rtype;
+    const char* op = "+";
+    Datum v = arraymath_zero(valsType);
+    Datum elem;
+    ArrayIterator iterator;
+    bool isnull;
+
+    arraymath_fmgrinfo_from_optype(op, valsType, valsType, &operfmgrinfo, &rtype);
+
+    iterator = arraymath_create_iterator(vals);
+    while (array_iterate(iterator, &elem, &isnull))
+    {
+        if (!isnull)
+        {
+            /* Apply the operator */
+            v = FunctionCall2(&operfmgrinfo, elem, v);
+        }
+    }
+    return v;
+}
+
+
+static float8
+arraymath_float8(Datum d, Oid typOid)
+{
+    FmgrInfo operfmgrinfo;
+    Datum v;
+    arraymath_fmgrinfo_from_cast(typOid, FLOAT8OID, &operfmgrinfo);
+    v = FunctionCall1(&operfmgrinfo, d);
+    return DatumGetFloat8(v);
+}
 
 
 /*
@@ -506,93 +594,139 @@ PG_FUNCTION_INFO_V1(array_sum);
 Datum
 array_sum(PG_FUNCTION_ARGS)
 {
-    // Our arguments:
-    ArrayType *vals;
+    ArrayType *vals = PG_GETARG_ARRAYTYPE_P(0);
+    Oid valsType = ARR_ELEMTYPE(vals);
+    Datum result = arraymath_zero(valsType);
+    size_t valsLength;
 
-    // The array element type:
-    Oid valsType;
-
-    // The size of the input array:
-    int valsLength;
-
-    Datum v = (Datum)0;
-
-    if (PG_ARGISNULL(0)) 
-    {
-        ereport(ERROR, (errmsg("Null arrays not accepted")));
-    }
-
-    vals = PG_GETARG_ARRAYTYPE_P(0);
-
-    if (ARR_NDIM(vals) == 0) 
-    {
+    if (ARR_NDIM(vals) == 0)
         PG_RETURN_NULL();
-    }
-    if (ARR_NDIM(vals) > 1) 
-    {
+
+    if (ARR_NDIM(vals) > 1)
         ereport(ERROR, (errmsg("One-dimesional arrays are required")));
-    }
 
-    // Determine the array element types.
-    valsType = ARR_ELEMTYPE(vals);
+    /* Empty length return 0 */
+    valsLength = (ARR_DIMS(vals))[0];
+    if (valsLength > 0)
+        result = arraymath_sum(vals, valsType);
 
-    if (valsType != INT2OID &&
-        valsType != INT4OID &&
-        valsType != INT8OID &&
-        valsType != FLOAT4OID &&
-        valsType != FLOAT8OID) 
-    {
-        ereport(ERROR, (errmsg("Sum subject must be SMALLINT, INTEGER, BIGINT, REAL, or DOUBLE PRECISION values")));
-    }
+    PG_RETURN_DATUM(result);
+}
+
+
+/*
+* Do average of an array
+*/
+Datum array_avg(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(array_avg);
+Datum
+array_avg(PG_FUNCTION_ARGS)
+{
+    ArrayType *vals = PG_GETARG_ARRAYTYPE_P(0);
+    Oid valsType = ARR_ELEMTYPE(vals);
+    Datum sumDatum;
+    float8 sum, count;
+    size_t valsLength;
+
+    if (ARR_NDIM(vals) == 0)
+        PG_RETURN_NULL();
+
+    if (ARR_NDIM(vals) > 1)
+        ereport(ERROR, (errmsg("One-dimesional arrays are required")));
 
     valsLength = (ARR_DIMS(vals))[0];
-
-    // Empty length still return 0
     if (valsLength == 0)
-    {
-        goto END;
-    } 
+        PG_RETURN_NULL();
 
-    
+    sumDatum = arraymath_sum(vals, valsType);
+    sum = arraymath_float8(sumDatum, valsType);
 
-    // Get + operator FmgrInfo
+    /* array_avg(anyarray) => float8 */
+    count = (float8)valsLength;
+
+    /* float8 argument should force float8 return */
+    PG_RETURN_FLOAT8(sum / count);
+}
+
+
+static Datum
+arraymath_minmax(ArrayType *vals, const char* op)
+{
+    Oid valsType = ARR_ELEMTYPE(vals);
     FmgrInfo operfmgrinfo;
     Oid rtype;
-    const char* op = "+";
+    ArrayIterator iterator;
+    Datum elem, result;
+    bool isnull, first = true;
 
     arraymath_fmgrinfo_from_optype(op, valsType, valsType, &operfmgrinfo, &rtype);
 
-
-
-    // Iterator
-    ArrayIterator iterator;
-
-    // Is Null boolean
-    bool isnull;
-
-    // Element
-    Datum element;
-
-
-#if PG_VERSION_NUM >= 90500
-    iterator = array_create_iterator(vals, 0, NULL);
-#else
-    iterator = array_create_iterator(vals, 0);
-#endif
-
-    
-    while (array_iterate(iterator, &element, &isnull))
+    iterator = arraymath_create_iterator(vals);
+    while (array_iterate(iterator, &elem, &isnull))
     {
-        if (!isnull)
+        if (isnull) continue;
+
+        if (first)
         {
-            /* Apply the operator */
-            v = FunctionCall2(&operfmgrinfo, element, v);
+            result = elem;
+            first = false;
+            continue;
         }
-        
+
+        /* OperFunc should return true/false for op */
+        if (FunctionCall2(&operfmgrinfo, elem, result))
+        {
+            result = elem;
+        }
     }
-
-
-    END:
-        PG_RETURN_DATUM(v);
-
+    PG_RETURN_DATUM(result);
 }
+
+
+/*
+* Do minimum of an array
+*/
+Datum array_min(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(array_min);
+Datum array_min(PG_FUNCTION_ARGS)
+{
+    ArrayType *arr = PG_GETARG_ARRAYTYPE_P(0);
+    size_t arrLen;
+
+    if (ARR_NDIM(arr) == 0)
+        PG_RETURN_NULL();
+
+    if (ARR_NDIM(arr) > 1)
+        ereport(ERROR, (errmsg("One-dimesional arrays are required")));
+
+    arrLen = (ARR_DIMS(arr))[0];
+    if (arrLen == 0)
+        PG_RETURN_NULL();
+
+    PG_RETURN_DATUM(arraymath_minmax(arr, "<"));
+}
+
+/*
+* Do maximum of an array
+*/
+Datum array_max(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(array_max);
+Datum array_max(PG_FUNCTION_ARGS)
+{
+    ArrayType *arr = PG_GETARG_ARRAYTYPE_P(0);
+    size_t arrLen;
+
+    if (ARR_NDIM(arr) == 0)
+        PG_RETURN_NULL();
+
+    if (ARR_NDIM(arr) > 1)
+        ereport(ERROR, (errmsg("One-dimesional arrays are required")));
+
+    arrLen = (ARR_DIMS(arr))[0];
+    if (arrLen == 0)
+        PG_RETURN_NULL();
+
+    PG_RETURN_DATUM(arraymath_minmax(arr, ">"));
+}
+
+
