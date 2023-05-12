@@ -163,7 +163,8 @@ arraymath_fmgrinfo_from_cast(Oid castSrcType, Oid castDstType, FmgrInfo *castfmg
     if (! HeapTupleIsValid(casttup))
     {
         elog(ERROR, "cannot find cast from %s to %s",
-            format_type_be(castSrcType), format_type_be(castDstType));
+            format_type_be(castSrcType),
+            format_type_be(castDstType));
     }
 
     castform = (Form_pg_cast) GETSTRUCT(casttup);
@@ -184,7 +185,8 @@ arraymath_typentry_from_type(Oid element_type, int flags)
     typentry = lookup_type_cache(element_type, flags);
     if (!typentry)
     {
-        elog(ERROR, "unable to lookup element type info for %s", format_type_be(element_type));
+        elog(ERROR, "unable to lookup element type info for %s",
+            format_type_be(element_type));
     }
     return typentry;
 }
@@ -217,7 +219,7 @@ arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2,
     /* Only 1D arrays for now */
     if (ndims1 != 1)
     {
-        elog(ERROR, "only 1-dimensional arrays supported");
+        elog(ERROR, "only one-dimensional arrays are supported");
         return NULL;
     }
 
@@ -604,7 +606,7 @@ array_sum(PG_FUNCTION_ARGS)
         PG_RETURN_NULL();
 
     if (ARR_NDIM(vals) > 1)
-        ereport(ERROR, (errmsg("One-dimesional arrays are required")));
+        ereport(ERROR, (errmsg("only one-dimensional arrays are supported")));
 
     /* Empty length return 0 */
     valsLength = (ARR_DIMS(vals))[0];
@@ -633,7 +635,7 @@ array_avg(PG_FUNCTION_ARGS)
         PG_RETURN_NULL();
 
     if (ARR_NDIM(vals) > 1)
-        ereport(ERROR, (errmsg("One-dimesional arrays are required")));
+        ereport(ERROR, (errmsg("only one-dimensional arrays are supported")));
 
     valsLength = (ARR_DIMS(vals))[0];
     if (valsLength == 0)
@@ -699,7 +701,7 @@ Datum array_min(PG_FUNCTION_ARGS)
         PG_RETURN_NULL();
 
     if (ARR_NDIM(arr) > 1)
-        ereport(ERROR, (errmsg("One-dimesional arrays are required")));
+        ereport(ERROR, (errmsg("only one-dimensional arrays are supported")));
 
     arrLen = (ARR_DIMS(arr))[0];
     if (arrLen == 0)
@@ -722,7 +724,7 @@ Datum array_max(PG_FUNCTION_ARGS)
         PG_RETURN_NULL();
 
     if (ARR_NDIM(arr) > 1)
-        ereport(ERROR, (errmsg("One-dimesional arrays are required")));
+        ereport(ERROR, (errmsg("only one-dimensional arrays are supported")));
 
     arrLen = (ARR_DIMS(arr))[0];
     if (arrLen == 0)
@@ -734,7 +736,8 @@ Datum array_max(PG_FUNCTION_ARGS)
 
 FmgrInfo* arraySortFmgrinfo;
 
-static int arraySortCmp (const void *a, const void *b)
+static int
+arraySortCmp (const void *a, const void *b)
 {
     int cmp;
     Datum da = *((Datum*)a);
@@ -751,14 +754,19 @@ static int arraySortCmp (const void *a, const void *b)
     return DatumGetInt32(cmp);
 }
 
-static int arrayRSortCmp (const void *a, const void *b)
+static int
+arrayRSortCmp (const void *a, const void *b)
 {
     return arraySortCmp(b, a);
 }
 
-static ArrayType *
-arraymath_sort(ArrayType *arr, bool reverse)
+
+Datum array_sort(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(array_sort);
+Datum array_sort(PG_FUNCTION_ARGS)
 {
+    ArrayType *arr = PG_GETARG_ARRAYTYPE_P(0);
+    bool reverse = PG_GETARG_BOOL(1);
     ArrayType *arrOut;
     Oid elmtype = ARR_ELEMTYPE(arr);
     TypeCacheEntry *typeCache = arraymath_typentry_from_type(elmtype, TYPECACHE_CMP_PROC_FINFO);
@@ -772,14 +780,14 @@ arraymath_sort(ArrayType *arr, bool reverse)
     int lbs[1];
 
     if (ARR_NDIM(arr) == 0)
-        return arr;
+        PG_RETURN_ARRAYTYPE_P(arr);
 
     if (ARR_NDIM(arr) > 1)
-        ereport(ERROR, (errmsg("One-dimesional arrays are required")));
+        ereport(ERROR, (errmsg("only one-dimensional arrays are supported")));
 
     nelems = (ARR_DIMS(arr))[0];
     if (nelems == 0)
-        return arr;
+        PG_RETURN_ARRAYTYPE_P(arr);
 
     deconstruct_array(arr, elmtype,
         typeCache->typlen, typeCache->typbyval, typeCache->typalign,
@@ -803,22 +811,66 @@ arraymath_sort(ArrayType *arr, bool reverse)
         1, dims, lbs, elmtype,
         typeCache->typlen, typeCache->typbyval, typeCache->typalign);
 
-    return arrOut;
+    PG_RETURN_ARRAYTYPE_P(arrOut);
 }
 
 
-Datum array_sort(PG_FUNCTION_ARGS);
-PG_FUNCTION_INFO_V1(array_sort);
-Datum array_sort(PG_FUNCTION_ARGS)
+/*
+* Do average of an array
+*/
+Datum array_median(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(array_median);
+Datum
+array_median(PG_FUNCTION_ARGS)
 {
-    ArrayType *arr = PG_GETARG_ARRAYTYPE_P(0);
-    PG_RETURN_ARRAYTYPE_P(arraymath_sort(arr, false));
-}
+    Datum arrSorted = DirectFunctionCall2(array_sort,
+        PG_GETARG_DATUM(0), BoolGetDatum(false));
+    ArrayType *arr = DatumGetArrayTypeP(arrSorted);
+    Oid elmtype = ARR_ELEMTYPE(arr);
+    TypeCacheEntry *typeCache = arraymath_typentry_from_type(elmtype, 0);
+    TypeCacheEntry *arrTypeCache = arraymath_typentry_from_type(get_fn_expr_argtype(fcinfo->flinfo, 0), 0);
+    size_t nelems;
 
-Datum array_rsort(PG_FUNCTION_ARGS);
-PG_FUNCTION_INFO_V1(array_rsort);
-Datum array_rsort(PG_FUNCTION_ARGS)
-{
-    ArrayType *arr = PG_GETARG_ARRAYTYPE_P(0);
-    PG_RETURN_ARRAYTYPE_P(arraymath_sort(arr, true));
+    Datum v0, v1;
+    FmgrInfo castfmgrinfo;
+    bool isnull;
+    int idx[1];
+
+    if ((!arr) || ARR_NDIM(arr) == 0)
+        PG_RETURN_NULL();
+
+    if (ARR_NDIM(arr) > 1)
+        ereport(ERROR, (errmsg("only one-dimensional arrays are supported")));
+
+    nelems = (ARR_DIMS(arr))[0];
+    if (nelems == 0)
+        PG_RETURN_NULL();
+
+    arraymath_fmgrinfo_from_cast(elmtype, FLOAT8OID, &castfmgrinfo);
+
+    /* Odd number of elements */
+    if (nelems % 2)
+    {
+        idx[0] = (nelems + 1) / 2;
+        v0 = array_get_element(arrSorted, 1, idx, arrTypeCache->typlen,
+            typeCache->typlen, typeCache->typbyval, typeCache->typalign,
+            &isnull);
+        PG_RETURN_DATUM(FunctionCall1(&castfmgrinfo, v0));
+    }
+    else
+    {
+        float8 f0, f1, median;
+        idx[0] = (nelems / 2) + 1;
+        v0 = array_get_element(arrSorted, 1, idx, arrTypeCache->typlen,
+            typeCache->typlen, typeCache->typbyval, typeCache->typalign,
+            &isnull);
+        idx[0] = (nelems / 2);
+        v1 = array_get_element(arrSorted, 1, idx, arrTypeCache->typlen,
+            typeCache->typlen, typeCache->typbyval, typeCache->typalign,
+            &isnull);
+        f0 = DatumGetFloat8(FunctionCall1(&castfmgrinfo, v0));
+        f1 = DatumGetFloat8(FunctionCall1(&castfmgrinfo, v1));
+        median = (f0 + f1) / 2.0;
+        PG_RETURN_FLOAT8(median);
+    }
 }

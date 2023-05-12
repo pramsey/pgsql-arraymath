@@ -26,7 +26,7 @@ The functions are prefixed by `array_`.
 * `array_avg(anyarray)` returns float average of all elements
 * `array_min(anyarray)` returns minimum of all elements
 * `array_max(anyarray)` returns maximum of all elements
-* `array_med(anyarray)` returns the median of all elements
+* `array_median(anyarray)` returns the median of all elements
 * `array_sort(anyarray)` sorts the array from smallest to largest
 * `array_rsort(anyarray)` sorts the array from largest to smallest
 
