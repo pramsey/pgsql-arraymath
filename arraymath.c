@@ -150,23 +150,24 @@ arraymath_fmgrinfo_from_optype(const char *opstr, Oid element_type1,
 * Given an a source and target type, look up the casting function.
 */
 static void
-arraymath_fmgrinfo_from_cast(Oid castType1, Oid castType2, FmgrInfo *operfmgrinfo)
+arraymath_fmgrinfo_from_cast(Oid castSrcType, Oid castDstType, FmgrInfo *castfmgrinfo)
 {
     HeapTuple casttup;
     Form_pg_cast castform;
 
     /* Lookup the function associated with the operator Oid */
     casttup = SearchSysCache2(CASTSOURCETARGET,
-        ObjectIdGetDatum(castType1),
-        ObjectIdGetDatum(castType2));
+        ObjectIdGetDatum(castSrcType),
+        ObjectIdGetDatum(castDstType));
 
     if (! HeapTupleIsValid(casttup))
     {
-        elog(ERROR, "cannot find cast heap tuple");
+        elog(ERROR, "cannot find cast from %s to %s",
+            format_type_be(castSrcType), format_type_be(castDstType));
     }
 
     castform = (Form_pg_cast) GETSTRUCT(casttup);
-    fmgr_info(castform->castfunc, operfmgrinfo);
+    fmgr_info(castform->castfunc, castfmgrinfo);
     ReleaseSysCache(casttup);
 
     return;
@@ -177,10 +178,10 @@ arraymath_fmgrinfo_from_cast(Oid castType1, Oid castType2, FmgrInfo *operfmgrinf
 * Read type information for a given element type.
 */
 static TypeCacheEntry *
-arraymath_typentry_from_type(Oid element_type)
+arraymath_typentry_from_type(Oid element_type, int flags)
 {
     TypeCacheEntry *typentry;
-    typentry = lookup_type_cache(element_type, 0);
+    typentry = lookup_type_cache(element_type, flags);
     if (!typentry)
     {
         elog(ERROR, "unable to lookup element type info for %s", format_type_be(element_type));
@@ -256,7 +257,7 @@ arraymath_array_oper_elem(ArrayType *array1, const char *opname, Datum element2,
     }
 
     /* Build 1-d output array */
-    tinfo = arraymath_typentry_from_type(rtype);
+    tinfo = arraymath_typentry_from_type(rtype, 0);
     dims[0] = nelems;
     lbs[0] = 1;
     array_out = construct_md_array(elems, nulls, 1, dims, lbs, rtype, tinfo->typlen, tinfo->typbyval, tinfo->typalign);
@@ -327,7 +328,7 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
     /* What function works for these input types? Populate operfmgrinfo. */
     /* What data type will the output array be? */
     arraymath_fmgrinfo_from_optype(opname, element_type1, element_type2, &operfmgrinfo, &rtype);
-    tinfo = arraymath_typentry_from_type(rtype);
+    tinfo = arraymath_typentry_from_type(rtype, 0);
 
     /* How big is the output array? */
     nitems1 = ArrayGetNItems(ndims1, dims1);
@@ -345,8 +346,8 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
     nulls = palloc(sizeof(bool)*nelems);
 
     /* Learn more about the input arrays */
-    info1 = arraymath_typentry_from_type(element_type1);
-    info2 = arraymath_typentry_from_type(element_type2);
+    info1 = arraymath_typentry_from_type(element_type1, 0);
+    info2 = arraymath_typentry_from_type(element_type2, 0);
 
     /* Loop over all the items, re-using items from the shorter */
     /* array to apply to the longer */
@@ -578,10 +579,10 @@ arraymath_sum(ArrayType *vals, Oid valsType)
 static float8
 arraymath_float8(Datum d, Oid typOid)
 {
-    FmgrInfo operfmgrinfo;
+    FmgrInfo castfmgrinfo;
     Datum v;
-    arraymath_fmgrinfo_from_cast(typOid, FLOAT8OID, &operfmgrinfo);
-    v = FunctionCall1(&operfmgrinfo, d);
+    arraymath_fmgrinfo_from_cast(typOid, FLOAT8OID, &castfmgrinfo);
+    v = FunctionCall1(&castfmgrinfo, d);
     return DatumGetFloat8(v);
 }
 
@@ -650,18 +651,15 @@ array_avg(PG_FUNCTION_ARGS)
 
 
 static Datum
-arraymath_minmax(ArrayType *vals, const char* op)
+arraymath_minmax(ArrayType *arr, int mode)
 {
-    Oid valsType = ARR_ELEMTYPE(vals);
-    FmgrInfo operfmgrinfo;
-    Oid rtype;
-    ArrayIterator iterator;
-    Datum elem, result;
+    Oid arrType = ARR_ELEMTYPE(arr);
+    Datum elem, result, cmp;
     bool isnull, first = true;
+    TypeCacheEntry *typeCache = arraymath_typentry_from_type(arrType, TYPECACHE_CMP_PROC_FINFO);
+    FmgrInfo cmpFmgrInfo = typeCache->cmp_proc_finfo;
 
-    arraymath_fmgrinfo_from_optype(op, valsType, valsType, &operfmgrinfo, &rtype);
-
-    iterator = arraymath_create_iterator(vals);
+    ArrayIterator iterator = arraymath_create_iterator(arr);
     while (array_iterate(iterator, &elem, &isnull))
     {
         if (isnull) continue;
@@ -673,8 +671,12 @@ arraymath_minmax(ArrayType *vals, const char* op)
             continue;
         }
 
-        /* OperFunc should return true/false for op */
-        if (FunctionCall2(&operfmgrinfo, elem, result))
+        /* cmp_proc_finfo returns -1 for less than */
+        /* and 1 for greater than. Mode is -1 for min */
+        /* and 1 for max */
+        cmp = FunctionCall2(&cmpFmgrInfo, elem, result);
+        if ((mode < 0 && DatumGetInt32(cmp) < 0) ||
+            (mode > 0 && DatumGetInt32(cmp) > 0))
         {
             result = elem;
         }
@@ -703,7 +705,7 @@ Datum array_min(PG_FUNCTION_ARGS)
     if (arrLen == 0)
         PG_RETURN_NULL();
 
-    PG_RETURN_DATUM(arraymath_minmax(arr, "<"));
+    PG_RETURN_DATUM(arraymath_minmax(arr, -1));
 }
 
 /*
@@ -726,7 +728,97 @@ Datum array_max(PG_FUNCTION_ARGS)
     if (arrLen == 0)
         PG_RETURN_NULL();
 
-    PG_RETURN_DATUM(arraymath_minmax(arr, ">"));
+    PG_RETURN_DATUM(arraymath_minmax(arr, 1));
 }
 
 
+FmgrInfo* arraySortFmgrinfo;
+
+static int arraySortCmp (const void *a, const void *b)
+{
+    int cmp;
+    Datum da = *((Datum*)a);
+    Datum db = *((Datum*)b);
+
+    /* Do not try to sort if we don't have a cmp method */
+    if (!arraySortFmgrinfo) return 0;
+
+    /* Sort nulls to the start of the list */
+    if (! da) return -1;
+    if (! db) return  1;
+
+    cmp = FunctionCall2(arraySortFmgrinfo, da, db);
+    return DatumGetInt32(cmp);
+}
+
+static int arrayRSortCmp (const void *a, const void *b)
+{
+    return arraySortCmp(b, a);
+}
+
+static ArrayType *
+arraymath_sort(ArrayType *arr, bool reverse)
+{
+    ArrayType *arrOut;
+    Oid elmtype = ARR_ELEMTYPE(arr);
+    TypeCacheEntry *typeCache = arraymath_typentry_from_type(elmtype, TYPECACHE_CMP_PROC_FINFO);
+    FmgrInfo cmpFmgrInfo = typeCache->cmp_proc_finfo;
+
+    int nelems;
+    Datum* elems;
+    bool* nulls;
+
+    int dims[1];
+    int lbs[1];
+
+    if (ARR_NDIM(arr) == 0)
+        return arr;
+
+    if (ARR_NDIM(arr) > 1)
+        ereport(ERROR, (errmsg("One-dimesional arrays are required")));
+
+    nelems = (ARR_DIMS(arr))[0];
+    if (nelems == 0)
+        return arr;
+
+    deconstruct_array(arr, elmtype,
+        typeCache->typlen, typeCache->typbyval, typeCache->typalign,
+        &elems, &nulls, &nelems);
+
+    dims[0] = nelems;
+    lbs[0] = 1;
+
+    arraySortFmgrinfo = &cmpFmgrInfo;
+    if (reverse)
+        qsort(elems, nelems, sizeof(Datum), arrayRSortCmp);
+    else
+        qsort(elems, nelems, sizeof(Datum), arraySortCmp);
+
+    for (int i = 0; i < nelems; i++)
+    {
+        nulls[i] = (elems[i] == (Datum)0);
+    }
+
+    arrOut = construct_md_array(elems, nulls,
+        1, dims, lbs, elmtype,
+        typeCache->typlen, typeCache->typbyval, typeCache->typalign);
+
+    return arrOut;
+}
+
+
+Datum array_sort(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(array_sort);
+Datum array_sort(PG_FUNCTION_ARGS)
+{
+    ArrayType *arr = PG_GETARG_ARRAYTYPE_P(0);
+    PG_RETURN_ARRAYTYPE_P(arraymath_sort(arr, false));
+}
+
+Datum array_rsort(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(array_rsort);
+Datum array_rsort(PG_FUNCTION_ARGS)
+{
+    ArrayType *arr = PG_GETARG_ARRAYTYPE_P(0);
+    PG_RETURN_ARRAYTYPE_P(arraymath_sort(arr, true));
+}

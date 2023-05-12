@@ -23,7 +23,7 @@ The operators are all the usual ones, but prefixed by ``@`` to indicate their el
 The functions are prefixed by `array_`.
 
 * `array_sum(anyarray)` sums up all the elements
-* `array_avg(anyarray)` returns average of all elements
+* `array_avg(anyarray)` returns float average of all elements
 * `array_min(anyarray)` returns minimum of all elements
 * `array_max(anyarray)` returns maximum of all elements
 * `array_med(anyarray)` returns the median of all elements
