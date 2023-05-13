@@ -98,6 +98,24 @@ void _PG_fini(void)
 * Functions
 */
 
+static void
+arraymath_check_type(Oid elmtype)
+{
+    /* Initialize result value */
+    if (elmtype != INT2OID   &&
+        elmtype != INT4OID   &&
+        elmtype != INT8OID   &&
+        elmtype != FLOAT4OID &&
+        elmtype != FLOAT8OID &&
+        elmtype != NUMERICOID)
+    {
+        ereport(ERROR, (
+            errmsg(
+                "Array type must be NUMERIC, SMALLINT, INTEGER, BIGINT, REAL, or DOUBLE PRECISION"
+                )));
+    }
+}
+
 static ArrayIterator
 arraymath_create_iterator(ArrayType *arr)
 {
@@ -602,6 +620,8 @@ array_sum(PG_FUNCTION_ARGS)
     Datum result = arraymath_zero(valsType);
     size_t valsLength;
 
+    arraymath_check_type(valsType);
+
     if (ARR_NDIM(vals) == 0)
         PG_RETURN_NULL();
 
@@ -630,6 +650,8 @@ array_avg(PG_FUNCTION_ARGS)
     Datum sumDatum;
     float8 sum, count;
     size_t valsLength;
+
+    arraymath_check_type(valsType);
 
     if (ARR_NDIM(vals) == 0)
         PG_RETURN_NULL();
@@ -660,8 +682,11 @@ arraymath_minmax(ArrayType *arr, int mode)
     bool isnull, first = true;
     TypeCacheEntry *typeCache = arraymath_typentry_from_type(arrType, TYPECACHE_CMP_PROC_FINFO);
     FmgrInfo cmpFmgrInfo = typeCache->cmp_proc_finfo;
+    ArrayIterator iterator;
 
-    ArrayIterator iterator = arraymath_create_iterator(arr);
+    arraymath_check_type(arrType);
+
+    iterator = arraymath_create_iterator(arr);
     while (array_iterate(iterator, &elem, &isnull))
     {
         if (isnull) continue;
@@ -779,6 +804,8 @@ Datum array_sort(PG_FUNCTION_ARGS)
     int dims[1];
     int lbs[1];
 
+    arraymath_check_type(elmtype);
+
     if (ARR_NDIM(arr) == 0)
         PG_RETURN_ARRAYTYPE_P(arr);
 
@@ -835,6 +862,8 @@ array_median(PG_FUNCTION_ARGS)
     FmgrInfo castfmgrinfo;
     bool isnull;
     int idx[1];
+
+    arraymath_check_type(elmtype);
 
     if ((!arr) || ARR_NDIM(arr) == 0)
         PG_RETURN_NULL();
