@@ -126,6 +126,17 @@ arraymath_create_iterator(ArrayType *arr)
 #endif
 }
 
+static Numeric
+arraymath_int64_to_numeric(int64 i)
+{
+#if PG_VERSION_NUM >= 140000
+    return int64_to_numeric(i);
+#else
+    return DatumGetNumeric(Int64GetDatum(i));
+#endif
+}
+
+
 /*
 * Given an operator symbol ("+", "-", "=" etc) and type element types,
 * try to look up the appropriate function to do element level operations of
@@ -560,7 +571,7 @@ arraymath_zero(Oid oid)
     else if (oid == NUMERICOID)
     {
         /* Numeric type is varlena, requires special initialization */
-        return NumericGetDatum(int64_to_numeric(0));
+        return NumericGetDatum(arraymath_int64_to_numeric(0));
     }
     else
     {
