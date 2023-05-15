@@ -12,6 +12,7 @@ jobs:
 
     # Github Runner for Ubuntu 22.04
     # has PgSQL 14 installed by default
+    # https://github.com/actions/runner-images/blob/main/images/linux/Ubuntu2204-Readme.md#postgresql
     # We remove that, and then install the
     # version we are testing.
     env:
