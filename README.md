@@ -1,3 +1,5 @@
+[![Build Status](https://github.com/pramsey/pgsql-arraymath/actions/workflows/ci.yml/badge.svg)](https://github.com/pramsey/pgsql-arraymath/actions/workflows/ci.yml)
+
 # pgsql-arraymath
 
 An extension for element-by-element operations on PostgreSQL arrays with a integer, float or numeric data type.
