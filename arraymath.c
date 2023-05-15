@@ -314,14 +314,14 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
     int ndims2 = ARR_NDIM(array2);
     int *dims1 = ARR_DIMS(array1);
     int *dims2 = ARR_DIMS(array2);
-    char *ptr1, *ptr2;
+    char *ptr1 = NULL, *ptr2 = NULL;
     Oid element_type1 = ARR_ELEMTYPE(array1);
     Oid element_type2 = ARR_ELEMTYPE(array2);
     Oid rtype;
     int nitems1, nitems2;
     int nelems, n;
-    bits8 *bitmap1, *bitmap2;
-    int bitmask1, bitmask2;
+    bits8 *bitmap1 = NULL, *bitmap2 = NULL;
+    int bitmask1 = 0, bitmask2 = 0;
     FmgrInfo operfmgrinfo;
     TypeCacheEntry *info1, *info2, *tinfo;
 
@@ -678,7 +678,7 @@ static Datum
 arraymath_minmax(ArrayType *arr, int mode)
 {
     Oid arrType = ARR_ELEMTYPE(arr);
-    Datum elem, result, cmp;
+    Datum elem, result = (Datum)0, cmp;
     bool isnull, first = true;
     TypeCacheEntry *typeCache = arraymath_typentry_from_type(arrType, TYPECACHE_CMP_PROC_FINFO);
     FmgrInfo cmpFmgrInfo = typeCache->cmp_proc_finfo;
@@ -708,7 +708,7 @@ arraymath_minmax(ArrayType *arr, int mode)
             result = elem;
         }
     }
-    PG_RETURN_DATUM(result);
+    return result;
 }
 
 
