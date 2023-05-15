@@ -70,3 +70,41 @@ If you apply the operators with an array on both sides, the operator will be app
       {f,t,f}
 ```
 
+## Array Operations
+
+The extension includes a few utility functions that work to summarize or maniulate an array in place.
+
+```
+SELECT array_sort(ARRAY[9,1,8,2,7,3,6,4,5]);
+
+  {1,2,3,4,5,6,7,8,9}
+
+SELECT array_sum(ARRAY[1,2,3,4,5,6,7,8,9]);
+
+  45
+
+SELECT array_avg(ARRAY[1,2,3,4,5,6,7,8,9]);
+
+  5
+
+SELECT array_min(ARRAY[1,2,3,4,5,6,7,8,9]);
+
+  1
+
+SELECT array_max(ARRAY[1,2,3,4,5,6,7,8,9]);
+
+  9
+
+SELECT array_median(ARRAY[1,2,3,4,5,6,7,8,9]);
+
+  5
+```
+
+As far as possible, the functions preserve the data type of the original input. For the median and mean, the return type is `float8`.
+
+```
+SELECT pg_typeof(array_min(ARRAY[1,2,3,4,5,6,7,8,9]));
+
+  integer
+```
+
