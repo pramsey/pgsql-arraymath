@@ -72,9 +72,9 @@ If you apply the operators with an array on both sides, the operator will be app
       {f,t,f}
 ```
 
-## Array Operations
+## Array Functions
 
-The extension includes a few utility functions that work to summarize or maniulate an array in place.
+The extension includes a few utility functions that work to summarize or manipulate an array directly without unnesting.
 
 ```
 SELECT array_sort(ARRAY[9,1,8,2,7,3,6,4,5]);
