@@ -4,7 +4,6 @@
 *.so
 *.so.*
 *.dylib
-
 regression.diffs
 regression.out
 results/arraymath.out
