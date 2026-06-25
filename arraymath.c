@@ -770,7 +770,7 @@ Datum array_max(PG_FUNCTION_ARGS)
 }
 
 
-FmgrInfo* arraySortFmgrinfo;
+static FmgrInfo* arraySortFmgrinfo;
 
 static int
 arraySortCmp (const void *a, const void *b)
