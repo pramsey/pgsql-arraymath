@@ -1,4 +1,4 @@
-# GitHub Actions for PostGIS
+# GitHub Actions for pgSQL ArrayMath
 #
 # Paul Ramsey <pramsey at cleverelephant dot ca>
 
@@ -7,47 +7,27 @@ on: [push, pull_request]
 
 jobs:
   linux:
-
+    name: PG ${{ matrix.pg }}
     runs-on: ubuntu-latest
-
-    name: "CI"
+    container:
+      image: pgxn/pgxn-tools
     strategy:
+      fail-fast: false
       matrix:
-        ci:
-        - { PGVER: 12 }
-        - { PGVER: 13 }
-        - { PGVER: 14 }
-        - { PGVER: 15 }
+        pg: [15, 16, 17, 18, 19]
 
     steps:
 
     - name: 'Check Out'
-      uses: actions/checkout@v3
+      uses: actions/checkout@v6
 
-    - name: 'Install PostgreSQL'
-      run: |
-        sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg-snapshot main ${{ matrix.ci.PGVER }}" > /etc/apt/sources.list.d/pgdg.list'
-        curl https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/apt.postgresql.org.gpg >/dev/null
-        sudo apt-get update
-        sudo apt-get -y install postgresql-${{ matrix.ci.PGVER }} postgresql-server-dev-${{ matrix.ci.PGVER }}
+    - name: 'Start PostgreSQL ${{ matrix.pg }}'
+      run: pg-start ${{ matrix.pg }}
 
-    - name: 'Start PostgreSQL'
+    - name: 'Build & Install'
       run: |
-        export PGVER=${{ matrix.ci.PGVER }}
-        export PGDATA=/var/lib/postgresql/$PGVER/main
-        export PGETC=/etc/postgresql/$PGVER/main
-        export PGBIN=/usr/lib/postgresql/$PGVER/bin
-        sudo cp ./ci/pg_hba.conf $PGETC/pg_hba.conf
-        sudo su postgres -c "$PGBIN/pg_ctl --pgdata $PGDATA start -o '-c config_file=$PGETC/postgresql.conf -p 5432'"
-
-    - name: 'Build & Test'
-      run: |
-        export PGVER=${{ matrix.ci.PGVER }}
-        export PGBIN=/usr/lib/postgresql/$PGVER/bin
-        export PATH=$PGBIN:$PATH
-        export PG_CONFIG=$PGBIN/pg_config
         export PG_CFLAGS=-Werror
-        make
-        sudo -E make PG_CONFIG=$PG_CONFIG install
-        PGUSER=postgres make installcheck || (cat regression.diffs && /bin/false)
+        make && make install
 
+    - name: 'Test'
+      run: PGUSER=postgres make installcheck || (cat regression.diffs && false)
