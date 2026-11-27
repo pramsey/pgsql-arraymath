@@ -804,9 +804,16 @@ arrayRSortCmp (const void *a, const void *b)
 }
 
 
+static Datum arraymath_sort(PG_FUNCTION_ARGS);
+
 Datum array_sort(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(array_sort);
 Datum array_sort(PG_FUNCTION_ARGS)
+{
+    return arraymath_sort(fcinfo);
+}
+
+static Datum arraymath_sort(PG_FUNCTION_ARGS)
 {
     ArrayType *arr = PG_GETARG_ARRAYTYPE_P(0);
     bool reverse = PG_GETARG_BOOL(1);
@@ -868,7 +875,7 @@ PG_FUNCTION_INFO_V1(array_median);
 Datum
 array_median(PG_FUNCTION_ARGS)
 {
-    Datum arrSorted = DirectFunctionCall2(array_sort,
+    Datum arrSorted = DirectFunctionCall2(arraymath_sort,
         PG_GETARG_DATUM(0), BoolGetDatum(false));
     ArrayType *arr = DatumGetArrayTypeP(arrSorted);
     Oid elmtype = ARR_ELEMTYPE(arr);
