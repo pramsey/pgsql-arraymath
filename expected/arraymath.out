@@ -101,8 +101,8 @@ SELECT
 	array_max(b) AS array_max,
 	array_avg(b) AS array_avg,
 	array_median(b) AS array_median,
-	array_sort(b) AS array_sort,
-	array_sort(b, true) AS array_rsort
+	public.array_sort(b) AS array_sort,
+	public.array_sort(b, true) AS array_rsort
 	FROM a;
  array_sum | array_min | array_max |     array_avg     | array_median |            array_sort            |           array_rsort            
 -----------+-----------+-----------+-------------------+--------------+----------------------------------+----------------------------------
