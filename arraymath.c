@@ -32,6 +32,8 @@
 
 /* PostgreSQL */
 #include <postgres.h>
+#include "access/htup_details.h"
+#include "access/tupmacs.h"
 #include <pg_config.h>
 #include <fmgr.h>
 #include <funcapi.h>
@@ -90,7 +92,7 @@ void _PG_fini(void)
 
 #define ARRISEMPTY(x)  (ARRNELEMS(x) == 0)
 
-#define BITMAP_GET(bitmap, i) (bitmap && (bitmap[(i)/sizeof(bits8)] & (1 << ((i) % sizeof(bits8)))))
+#define BITMAP_GET(bitmap, i) (bitmap && (bitmap[(i)/sizeof(uint8)] & (1 << ((i) % sizeof(uint8)))))
 
 #define BITMAP_INCREMENT(bitmap, bitmask) do { \
     if (bitmap) { \
@@ -338,7 +340,7 @@ arraymath_array_oper_array(ArrayType *array1, const char *opname, ArrayType *arr
     Oid rtype;
     int nitems1, nitems2;
     int nelems, n;
-    bits8 *bitmap1 = NULL, *bitmap2 = NULL;
+    uint8 *bitmap1 = NULL, *bitmap2 = NULL;
     int bitmask1 = 0, bitmask2 = 0;
     FmgrInfo operfmgrinfo;
     TypeCacheEntry *info1, *info2, *tinfo;
